@@ -16,3 +16,7 @@ be_dump.txt
 dump_tables.py
 dump.txt
 test_skoda.py
+*.pdf
+*.csv
+*.xlsx
+721304827.zip
