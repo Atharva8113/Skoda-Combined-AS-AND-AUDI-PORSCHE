@@ -1,6 +1,6 @@
 # VAG Group (VW/Audi/Skoda) – Invoice Extractor
 
-A unified extraction tool for parsing invoices and tabular data from VAG Group's PDF invoices. This tool supports extraction from two primary formats into configurable CSV datasets:
+A unified extraction tool for parsing invoices and tabular data from VAG Group's PDF invoices. This tool supports extraction from two primary formats into configurable Excel datasets:
 
 1. **Skoda Auto AS** (Mladá Boleslav / ČSN text-based format)
 2. **VW / Audi Group** (VW AG, Audi AG, Audi Hungaria table-based format)
@@ -64,3 +64,4 @@ python VAG_Extractor_Combined_App.py
 - **ALWAYS use virtual environment for Python.**
 - `venv` and `__pycache__` are purposefully ignored in Git.
 - Ensure the `Nagarkot Logo.png` is in the directory when running from source or building the executable.
+- Output files are generated in Excel (.xlsx) format.

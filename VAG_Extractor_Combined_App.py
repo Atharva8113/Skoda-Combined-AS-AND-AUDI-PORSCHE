@@ -6,6 +6,7 @@ import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import pdfplumber
+import pandas as pd
 from typing import Optional
 
 try:
@@ -303,7 +304,7 @@ def extract_vw_group_invoice(pdf_path: str, detected_source="UNKNOWN") -> dict:
     }
 
 # ---------- SINGLE WRITE FUNCTION ----------
-def write_csv(output_path: str, all_records: list[dict], source: str) -> None:
+def write_excel(output_path: str, all_records: list[dict], source: str) -> None:
     if not all_records:
         return
 
@@ -344,21 +345,20 @@ def write_csv(output_path: str, all_records: list[dict], source: str) -> None:
             "Currency",
         ]
 
-    with open(output_path, 'w', newline='', encoding='utf-8-sig') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
-        writer.writeheader()
-        for record in all_records:
-            safe_record = dict(record)
-            
-            part_no = safe_record.get("Part No.", "")
-            if part_no and part_no[0] == '0':
-                safe_record["Part No."] = f'="{part_no}"'
-                
-            mat_no = safe_record.get("Mat. NO.", "")
-            if mat_no and mat_no[0] == '0':
-                safe_record["Mat. NO."] = f'="{mat_no}"'
-                
-            writer.writerow(safe_record)
+    df = pd.DataFrame(all_records)
+    # Filter columns to only those in fieldnames (available in df)
+    existing_cols = [col for col in fieldnames if col in df.columns]
+    df = df[existing_cols]
+
+    # Convert Part No. and Mat. NO. to string to ensure leading zeros are kept
+    for col in ["Part No.", "Mat. NO."]:
+        if col in df.columns:
+            df[col] = df[col].astype(str)
+
+    try:
+        df.to_excel(output_path, index=False, engine='openpyxl')
+    except Exception as e:
+        raise Exception(f"Error saving Excel file: {e}")
 
 # ---------- DETECT SUB-SOURCE (for VW/Audi family) ----------
 def _detect_vw_sub_source(pdf_path: str) -> str:
@@ -429,7 +429,7 @@ class CombinedExtractorGUI:
         footer_frame = ttk.Frame(self.root, padding="10")
         footer_frame.pack(side="bottom", fill="x")
         ttk.Label(footer_frame, text="© Nagarkot Forwarders Pvt Ltd", style="Footer.TLabel").pack(side="left", anchor="s")
-        self.btn_run = ttk.Button(footer_frame, text="Extract & Generate CSV", command=self.run_extraction, style="Primary.TButton")
+        self.btn_run = ttk.Button(footer_frame, text="Extract & Generate Excel", command=self.run_extraction, style="Primary.TButton")
         self.btn_run.pack(side="right", padx=10, pady=5)
 
         content_frame = ttk.Frame(self.root, padding="20 10 20 10")
@@ -460,8 +460,8 @@ class CombinedExtractorGUI:
         mode_frame = ttk.Frame(output_frame)
         mode_frame.grid(row=1, column=1, columnspan=2, sticky="w")
         self.mode_var = tk.StringVar(value="combined")
-        ttk.Radiobutton(mode_frame, text="Combined (All in one superset CSV)", variable=self.mode_var, value="combined", command=self.toggle_filename_state).pack(side="left", padx=(0, 15))
-        ttk.Radiobutton(mode_frame, text="Individual (Separate CSV per invoice)", variable=self.mode_var, value="individual", command=self.toggle_filename_state).pack(side="left")
+        ttk.Radiobutton(mode_frame, text="Combined (All in one superset Excel)", variable=self.mode_var, value="combined", command=self.toggle_filename_state).pack(side="left", padx=(0, 15))
+        ttk.Radiobutton(mode_frame, text="Individual (Separate Excel per invoice)", variable=self.mode_var, value="individual", command=self.toggle_filename_state).pack(side="left")
 
         ttk.Label(output_frame, text="Output Folder:").grid(row=2, column=0, sticky="w", padx=(0, 10), pady=5)
         self.output_dir_var = tk.StringVar()
@@ -473,7 +473,7 @@ class CombinedExtractorGUI:
         self.output_name_var = tk.StringVar(value=f"Combined_Extracted_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}")
         self.entry_output_name = ttk.Entry(output_frame, textvariable=self.output_name_var, width=50)
         self.entry_output_name.grid(row=3, column=1, sticky="ew", padx=(0, 10))
-        self.lbl_filename_hint = ttk.Label(output_frame, text="(.csv added automatically)", foreground="gray")
+        self.lbl_filename_hint = ttk.Label(output_frame, text="(.xlsx added automatically)", foreground="gray")
         self.lbl_filename_hint.grid(row=3, column=2, sticky="w")
         output_frame.columnconfigure(1, weight=1)
 
@@ -519,7 +519,7 @@ class CombinedExtractorGUI:
             self.lbl_filename_hint.config(text="(Auto-named by Invoice No.)")
         else:
             self.entry_output_name.config(state="normal")
-            self.lbl_filename_hint.config(text="(.csv added automatically)")
+            self.lbl_filename_hint.config(text="(.xlsx added automatically)")
 
     def clear_files(self) -> None:
         self.selected_files.clear()
@@ -567,10 +567,8 @@ class CombinedExtractorGUI:
 
                 if mode == "individual" and items:
                     safe_inv = "".join(c for c in inv_no if c.isalnum() or c in ('-', '_'))
-                    indiv_name = f"{safe_inv}.csv" if safe_inv else f"{os.path.splitext(fname)[0]}_Extracted.csv"
-                    # If combined mode receives mixed sources, it will use the superset
-                    # But if we want individual mode strictness:
-                    write_csv(os.path.join(out_dir, indiv_name), items, source)
+                    indiv_name = f"{safe_inv}.xlsx" if safe_inv else f"{os.path.splitext(fname)[0]}_Extracted.xlsx"
+                    write_excel(os.path.join(out_dir, indiv_name), items, source)
                     detail_msg = f"Saved: {indiv_name} ({count} items)"
                 else:
                     combined_records.extend(items)
@@ -584,10 +582,10 @@ class CombinedExtractorGUI:
 
         if mode == "combined" and total_items > 0:
             out_name = self.output_name_var.get().strip() or f"Combined_Extracted_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            if not out_name.lower().endswith('.csv'): out_name += '.csv'
+            if not out_name.lower().endswith('.xlsx'): out_name += '.xlsx'
             out_path = os.path.join(out_dir, out_name)
             try:
-                # Determine the primary source for combined mode if completely mixed use superset (we just pass a dummy flag to fall back to a full combined list)
+                # Determine the primary source for combined mode
                 sources_found = set(r.get("Source", "UNKNOWN") for r in combined_records)
                 if len(sources_found) == 1:
                     primary_source = list(sources_found)[0]
@@ -595,24 +593,18 @@ class CombinedExtractorGUI:
                     primary_source = "MIXED"
                 
                 if primary_source == "MIXED":
-                     # Dynamic superset column extraction
-                     csv_cols = list({k: None for r in combined_records for k in r.keys()}.keys())
-                     with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
-                        writer = csv.DictWriter(f, fieldnames=csv_cols, extrasaction="ignore")
-                        writer.writeheader()
-                        for r in combined_records:
-                            safe_record = dict(r)
-                            pno = safe_record.get("Part No.", "")
-                            if pno and pno[0] == '0': safe_record["Part No."] = f'="{pno}"'
-                            mno = safe_record.get("Mat. NO.", "")
-                            if mno and mno[0] == '0': safe_record["Mat. NO."] = f'="{mno}"'
-                            writer.writerow(safe_record)
+                     df = pd.DataFrame(combined_records)
+                     # Convert Part No. and Mat. NO. to string to ensure leading zeros are kept
+                     for col in ["Part No.", "Mat. NO."]:
+                         if col in df.columns:
+                             df[col] = df[col].astype(str)
+                     df.to_excel(out_path, index=False, engine='openpyxl')
                 else:
-                     write_csv(out_path, combined_records, primary_source)
+                     write_excel(out_path, combined_records, primary_source)
                 messagebox.showinfo("Success", f"Saved {total_items} items to {out_path}")
                 self.status_var.set(f"Done. Saved to {out_name}")
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to save CSV:\n{e}")
+                messagebox.showerror("Error", f"Failed to save Excel:\n{e}")
         elif mode == "combined":
             messagebox.showwarning("No Data", "No items extracted.")
         else:
